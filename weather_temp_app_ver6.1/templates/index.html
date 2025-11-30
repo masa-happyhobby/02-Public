@@ -87,31 +87,6 @@
     次回更新予定：{{ next_at.strftime("%Y-%m-%d %H:%M:%S") if next_at else "—" }}（5分ごと）
   </p>
 
-  <div class="grid">
-    <!-- 水位センサカード -->
-    <section class="card">
-      <h2>水位センサ</h2>
-      {% if sensor.ok %}
-        <div class="row">温度：{{ sensor.temp_c }} ℃</div>
-        <!-- div class="row">湿度：{{ sensor.humidity }} %</div>-->
-      {% else %}
-        <div class="error">センサー読み取りに失敗または未接続。</div>
-        {% if sensor.note %}<div class="muted">{{ sensor.note }}</div>{% endif %}
-      {% endif %}
-    </section> 
-    <!-- Boxカード -->
-    <section class="card">
-      <h2>通知</h2>
-      {% if sensor.ok %}
-        <div class="row">温度：{{ sensor.temp_c }} ℃</div>
-        <!-- div class="row">湿度：{{ sensor.humidity }} %</div>-->
-      {% else %}
-        <div class="error">センサー読み取りに失敗または未接続。</div>
-        {% if sensor.note %}<div class="muted">{{ sensor.note }}</div>{% endif %}
-      {% endif %}
-    </section> 
-  </div>
-
   <!-- グラフ全体のラッパー -->
   <div class="graph-wrap">
     <h2>温湿度グラフ（室内＋外気）</h2>
