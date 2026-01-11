@@ -2,41 +2,140 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8">
-  <title>天気 × 室内センサー（5分自動更新）</title>
+  <title>天気 × 室内センサー × 水位（5分自動更新）</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
-  <!-- 5分ごとにページを自動リロード -->
+
+  <!-- 5分ごとにページを自動リロード（バックグラウンド更新＋表示も更新したい場合） -->
   <meta http-equiv="refresh" content="300">
 
   <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
   <style>
-    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", sans-serif; margin: 24px; }
-    .wrap { max-width: 900px; margin: 0 auto; }
-    header { margin-bottom: 16px; }
-    form { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; }
-    input[type="text"] { padding: 8px 10px; font-size: 16px; flex: 1; }
-    button { padding: 8px 12px; font-size: 16px; cursor: pointer; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
-    .card { border: 1px solid #ddd; border-radius: 12px; padding: 16px; background: #fff; }
+    body {
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", sans-serif;
+      margin: 24px;
+      background: #fafafa;
+    }
+    .wrap { max-width: 980px; margin: 0 auto; }
+    header { margin-bottom: 14px; }
+    header h1 { margin: 0 0 6px; font-size: 22px; }
     .muted { color: #666; font-size: 14px; }
     .error { color: #b00020; }
     .row   { margin: 6px 0; }
 
+    form { display: flex; gap: 8px; align-items: center; margin: 12px 0 14px; }
+    input[type="text"] { padding: 8px 10px; font-size: 16px; flex: 1; }
+    button { padding: 8px 12px; font-size: 14px; cursor: pointer; }
+
+    /* 2×2 固定カードレイアウト */
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+    .card {
+      border: 1px solid #ddd;
+      border-radius: 12px;
+      padding: 16px;
+      background: #fff;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+    }
+    .card h2 { margin: 0 0 10px; font-size: 18px; }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 10px;
+      border-radius: 999px;
+      border: 1px solid #eee;
+      background: #fafafa;
+      font-size: 12px;
+      color: #333;
+    }
+    .badge.ok { background: #f1fff4; border-color: #d6f5dd; }
+    .badge.warn { background: #fff9e6; border-color: #ffe2a6; }
+    .badge.crit { background: #ffecec; border-color: #ffb8b8; }
+    .badge.na { background: #f4f4f4; border-color: #e6e6e6; color: #666; }
+
+    /* ステータスバー */
+    .statusbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 16px;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 12px;
+      border: 1px solid #ddd;
+      border-radius: 12px;
+      background: #fff;
+      margin: 12px 0 16px;
+    }
+    .status-left, .status-right { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+    .pill {
+      display: inline-flex;
+      gap: 6px;
+      align-items: baseline;
+      padding: 4px 10px;
+      border: 1px solid #eee;
+      border-radius: 999px;
+      background: #fafafa;
+      font-size: 13px;
+      color: #333;
+      white-space: nowrap;
+      max-width: 100%;
+    }
+    .pill strong { font-weight: 700; }
+    .pill .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+
+    /* グラフ */
     .graph-wrap { text-align: center; margin-top: 24px; }
     .graph-wrap canvas {
       max-width: 100%;
       display: block;
       margin: 8px auto 24px;
+      background: #fff;
+      border: 1px solid #e6e6e6;
+      border-radius: 10px;
+    }
+
+    /* グラフ操作UI */
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: center;
+      margin: 10px 0 4px;
+    }
+    .controls select, .controls button { padding: 8px 10px; font-size: 14px; }
+
+    .note {
+      text-align: left;
+      max-width: 860px;
+      margin: 0 auto 12px;
+      font-size: 13px;
+      color: #555;
+      line-height: 1.6;
+      border-left: 4px solid #eee;
+      padding: 8px 10px;
+      background: #fafafa;
+      border-radius: 8px;
+    }
+
+    /* 小さめ画面では1列 */
+    @media (max-width: 720px) {
+      .grid { grid-template-columns: 1fr; }
+      canvas { width: 100% !important; }
     }
   </style>
 </head>
+
 <body>
 <div class="wrap">
   <header>
-    <h1>天気 × 室内センサー（5分自動更新）</h1>
-    <p class="muted">OpenWeatherMapの天気と、Raspberry Pi の DHT20 室温・湿度を表示します。</p>
+    <h1>天気 × 室内センサー × 水位（5分自動更新）</h1>
+    <p class="muted">OpenWeatherMap（外気）＋ DHT20（室内）＋ GP2Y0E03（水位）をまとめて表示します。</p>
   </header>
 
   {% with messages = get_flashed_messages(with_categories=true) %}
@@ -54,175 +153,327 @@
     <button type="submit">都市を変更して即更新</button>
   </form>
 
+  <!-- ステータスバー（テンプレ変数があれば即動作） -->
+  <div class="statusbar">
+    <div class="status-left">
+      <span class="pill">最終更新: <strong>{{ updated_at.strftime("%Y-%m-%d %H:%M:%S") if updated_at else "—" }}</strong></span>
+      <span class="pill">次回更新: <strong>{{ next_at.strftime("%Y-%m-%d %H:%M:%S") if next_at else "—" }}</strong></span>
+      <span class="pill">データ件数: <strong>{{ history_len }}</strong></span>
+    </div>
+    <div class="status-right">
+      <span class="pill">CSV: <strong class="mono">{{ csv_path }}</strong></span>
+    </div>
+  </div>
+
+  <!-- 2×2 カード -->
   <div class="grid">
     <!-- 天気カード -->
     <section class="card">
       <h2>天気（{{ weather.city if weather.ok else city }}）</h2>
       {% if weather.ok %}
+        <div class="row"><span class="badge ok">取得OK</span></div>
         <div class="row">説明：{{ weather.desc }}</div>
         <div class="row">気温：{{ weather.temp }} ℃（体感 {{ weather.feels }} ℃）</div>
         <div class="row">湿度：{{ weather.humidity }} %</div>
         <div class="row">風速：{{ weather.wind }} m/s</div>
-        <img src="https://openweathermap.org/img/wn/{{ weather.icon }}@2x.png" alt="天気アイコン">
+        {% if weather.icon %}
+          <img src="https://openweathermap.org/img/wn/{{ weather.icon }}@2x.png" alt="天気アイコン">
+        {% endif %}
       {% else %}
+        <div class="row"><span class="badge na">N/A</span></div>
         <div class="error">天気情報の取得に失敗：{{ weather.error }}</div>
       {% endif %}
     </section>
 
-    <!-- センサーカード -->
+    <!-- 室内センサーカード -->
     <section class="card">
       <h2>室内（DHT20）</h2>
       {% if sensor.ok %}
+        <div class="row"><span class="badge ok">取得OK</span></div>
         <div class="row">温度：{{ sensor.temp_c }} ℃</div>
         <div class="row">湿度：{{ sensor.humidity }} %</div>
       {% else %}
+        <div class="row"><span class="badge na">N/A</span></div>
         <div class="error">センサー読み取りに失敗または未接続。</div>
         {% if sensor.note %}<div class="muted">{{ sensor.note }}</div>{% endif %}
       {% endif %}
     </section>
+
+    <!-- 水位計カード（water が渡っていれば即動作） -->
+    <section class="card">
+      <h2>水位計</h2>
+      {% if water is defined and water.ok %}
+        <div class="row"><span class="badge ok">取得OK</span></div>
+        <div class="row">距離（空=800）：{{ water.distance_mm }} mm</div>
+        <div class="row">水位（残量指標）：{{ water.level_mm }} mm</div>
+        <div class="muted">※この画面では「水位(mm)=距離(mm)」として扱います（800mmが空）。</div>
+      {% else %}
+        <div class="row"><span class="badge na">N/A</span></div>
+        <div class="row">水位：—</div>
+        <div class="muted">※water をテンプレに渡せば実表示になります。</div>
+      {% endif %}
+    </section>
+
+    <!-- アラーム表示カード（テンプレ変数があれば即動作） -->
+    <section class="card">
+      <h2>アラーム表示</h2>
+      {% if alarm is defined %}
+        {% if alarm.level == "critical" %}
+          <div class="row"><span class="badge crit">CRITICAL</span></div>
+        {% elif alarm.level == "warning" %}
+          <div class="row"><span class="badge warn">WARNING</span></div>
+        {% else %}
+          <div class="row"><span class="badge ok">OK</span></div>
+        {% endif %}
+        <div class="row">状態：{{ alarm.title }}</div>
+        {% if alarm.message %}<div class="row">詳細：{{ alarm.message }}</div>{% endif %}
+      {% else %}
+        <div class="row"><span class="badge na">N/A</span></div>
+        <div class="row">状態：—</div>
+        <div class="muted">※alarm をテンプレに渡せば実表示になります。</div>
+      {% endif %}
+    </section>
   </div>
 
-  <p class="muted" style="margin-top: 16px;">
-    最終更新：{{ updated_at.strftime("%Y-%m-%d %H:%M:%S") if updated_at else "—" }}　
-    次回更新予定：{{ next_at.strftime("%Y-%m-%d %H:%M:%S") if next_at else "—" }}（5分ごと）
-  </p>
-
-  <!-- グラフ全体のラッパー -->
+  <!-- グラフ -->
   <div class="graph-wrap">
-    <h2>温湿度グラフ（室内＋外気）</h2>
+    <h2>環境ロググラフ（室内＋外気＋水位）</h2>
     <p class="muted">
-      データ件数：{{ history_len }} 件（間隔 {{ history_interval_sec }} 秒）<br>
-      CSVログ：{{ csv_path }} に保存中
+      取得間隔：{{ history_interval_sec }} 秒（想定） / 表示はレンジで間引き表示
     </p>
 
+    <!-- 表示レンジ切替 + 再描画 -->
+    <div class="controls">
+      <label>
+        表示レンジ：
+        <select id="rangeSelect">
+          <option value="6">6時間</option>
+          <option value="12">12時間</option>
+          <option value="24" selected>24時間</option>
+          <option value="48">48時間</option>
+        </select>
+      </label>
+      <button type="button" id="redrawBtn">再描画</button>
+    </div>
+
     <h3>温度グラフ</h3>
-    <!-- サイズを属性で固定（Chart.js に触らせない） -->
     <canvas id="tempChart" width="800" height="300"></canvas>
 
     <h3>湿度グラフ</h3>
     <canvas id="humChart" width="800" height="300"></canvas>
+
+    <h3>水位グラフ</h3>
+    <canvas id="waterChart" width="800" height="300"></canvas>
+
+    <div class="note">
+      <strong>凡例/注意</strong><br>
+      ・取得できない値（null）は欠損として扱います。<code>spanGaps: true</code> により前後の点を線でつなぎます（欠損が長い場合は不連続に見えることがあります）。<br>
+      ・レンジ切替は「最後の時刻」から遡って 6/12/24/48 時間を表示します。<br>
+      ・再描画時は既存の Chart インスタンスを破棄してから生成するため、長時間運用時の重複描画/メモリリークを抑止します。<br>
+      ・水位グラフには <code>water_warn_mm</code> / <code>water_critical_mm</code> が API に含まれる場合、水平線で表示します。
+    </div>
   </div>
-</div> <!-- .wrap -->
+</div>
 
 <script>
-async function loadHistoryAndDraw() {
-  // Chart.js の自動リサイズを完全停止
-  Chart.defaults.responsive = false;
-  Chart.defaults.maintainAspectRatio = false;
+  // Chart インスタンス（再描画時に destroy する）
+  let chartTemp = null;
+  let chartHum = null;
+  let chartWater = null;
 
-  try {
-    const resp = await fetch("/api/history");
-    if (!resp.ok) {
-      console.error("history API error", resp.status);
-      return;
-    }
-    const data = await resp.json();
-    console.log("history data", data);
-
-    // 安全に配列を取り出し
-    const labels     = Array.isArray(data.times)       ? data.times       : [];
-    const indoorTemp = Array.isArray(data.indoor_temp) ? data.indoor_temp : [];
-    const indoorHum  = Array.isArray(data.indoor_hum)  ? data.indoor_hum  : [];
-    const owmTemp    = Array.isArray(data.owm_temp)    ? data.owm_temp    : [];
-    const owmHum     = Array.isArray(data.owm_hum)     ? data.owm_hum     : [];
-
-    const tempCanvas = document.getElementById("tempChart");
-    const humCanvas  = document.getElementById("humChart");
-    if (!tempCanvas || !humCanvas) {
-      console.error("canvas要素が見つかりません");
-      return;
-    }
-
-    // 念のため height/width を固定（異常値を上書き）
-    tempCanvas.width  = 800;
-    tempCanvas.height = 300;
-    humCanvas.width   = 800;
-    humCanvas.height  = 300;
-
-    const safeLabels     = labels.length ? labels : ["No data"];
-    const safeIndoorTemp = labels.length ? indoorTemp : [null];
-    const safeOwmTemp    = labels.length ? owmTemp    : [null];
-    const safeIndoorHum  = labels.length ? indoorHum  : [null];
-    const safeOwmHum     = labels.length ? owmHum     : [null];
-
-    const ctxTemp = tempCanvas.getContext("2d");
-    const ctxHum  = humCanvas.getContext("2d");
-
-    // 温度グラフ
-    new Chart(ctxTemp, {
-      type: "line",
-      data: {
-        labels: safeLabels,
-        datasets: [
-          {
-            label: "室内温度 (°C)",
-            data: safeIndoorTemp,
-            tension: 0.2,
-            spanGaps: true
-          },
-          {
-            label: "外気温度 (°C)",
-            data: safeOwmTemp,
-            tension: 0.2,
-            spanGaps: true
-          }
-        ]
-      },
-      options: {
-        responsive: false,
-        maintainAspectRatio: false,
-        interaction: { mode: "index", intersect: false },
-        scales: {
-          x: { ticks: { maxTicksLimit: 8 } },
-          y: { title: { display: true, text: "Temperature (°C)" } }
-        }
-      }
-    });
-
-    // 湿度グラフ
-    new Chart(ctxHum, {
-      type: "line",
-      data: {
-        labels: safeLabels,
-        datasets: [
-          {
-            label: "室内湿度 (%)",
-            data: safeIndoorHum,
-            tension: 0.2,
-            spanGaps: true
-          },
-          {
-            label: "外気湿度 (%)",
-            data: safeOwmHum,
-            tension: 0.2,
-            spanGaps: true
-          }
-        ]
-      },
-      options: {
-        responsive: false,
-        maintainAspectRatio: false,
-        interaction: { mode: "index", intersect: false },
-        scales: {
-          x: { ticks: { maxTicksLimit: 8 } },
-          y: {
-            title: { display: true, text: "Humidity (%)" },
-            min: 0,
-            max: 100
-          }
-        }
-      }
-    });
-
-  } catch (e) {
-    console.error("履歴の取得に失敗しました", e);
+  function destroyIfExists(ch) {
+    try { if (ch) ch.destroy(); } catch (_) {}
+    return null;
   }
-}
 
-// DOM構築完了後に実行
-document.addEventListener("DOMContentLoaded", function () {
-  loadHistoryAndDraw();
-});
+  function parseTs(s) {
+    const d = new Date(String(s).replace(" ", "T"));
+    return isNaN(d) ? null : d;
+  }
+
+  function clipToHours(labels, seriesList, hours) {
+    if (!labels.length) return { labels, seriesList };
+
+    const times = labels.map(parseTs);
+    const last = times[times.length - 1];
+    if (!last) return { labels, seriesList };
+
+    const cutoff = new Date(last.getTime() - hours * 60 * 60 * 1000);
+    const idx = [];
+    for (let i = 0; i < times.length; i++) {
+      if (times[i] && times[i] >= cutoff) idx.push(i);
+    }
+    if (!idx.length) return { labels, seriesList };
+
+    const pick = (arr) => idx.map(i => arr[i]);
+    return {
+      labels: pick(labels),
+      seriesList: seriesList.map(pick),
+    };
+  }
+
+  async function loadHistoryAndDraw() {
+    // Chart.js の自動リサイズを停止（canvas height 爆増対策）
+    Chart.defaults.responsive = false;
+    Chart.defaults.maintainAspectRatio = false;
+
+    const rangeEl = document.getElementById("rangeSelect");
+    const hoursWindow = rangeEl ? Number(rangeEl.value || 24) : 24;
+
+    try {
+      const resp = await fetch("/api/history", { cache: "no-store" });
+      if (!resp.ok) {
+        console.error("history API error", resp.status);
+        return;
+      }
+      const data = await resp.json();
+
+      // 配列（存在しなければ空）
+      let labels     = Array.isArray(data.times)        ? data.times        : [];
+      let indoorTemp = Array.isArray(data.indoor_temp)  ? data.indoor_temp  : [];
+      let indoorHum  = Array.isArray(data.indoor_hum)   ? data.indoor_hum   : [];
+      let owmTemp    = Array.isArray(data.owm_temp)     ? data.owm_temp     : [];
+      let owmHum     = Array.isArray(data.owm_hum)      ? data.owm_hum      : [];
+      let waterLevel = Array.isArray(data.water_level)  ? data.water_level  : [];
+
+      // 水位の警告ライン（数値で来る想定。来ない場合は null）
+      const warnMm = (typeof data.water_warn_mm === "number") ? data.water_warn_mm : null;
+      const critMm = (typeof data.water_critical_mm === "number") ? data.water_critical_mm : null;
+
+      // 表示レンジで切り出し
+      const clipped = clipToHours(
+        labels,
+        [indoorTemp, indoorHum, owmTemp, owmHum, waterLevel],
+        hoursWindow
+      );
+      labels = clipped.labels;
+      [indoorTemp, indoorHum, owmTemp, owmHum, waterLevel] = clipped.seriesList;
+
+      // canvas
+      const tempCanvas  = document.getElementById("tempChart");
+      const humCanvas   = document.getElementById("humChart");
+      const waterCanvas = document.getElementById("waterChart");
+      if (!tempCanvas || !humCanvas || !waterCanvas) {
+        console.error("canvas要素が見つかりません");
+        return;
+      }
+
+      // 念のため属性で固定（異常な height を上書き）
+      for (const c of [tempCanvas, humCanvas, waterCanvas]) {
+        c.width = 800;
+        c.height = 300;
+      }
+
+      // データが少なくても表示できるように（0件ならダミー1点）
+      const safeLabels = labels.length ? labels : ["No data"];
+      const safe = (arr) => (labels.length ? arr : [null]);
+
+      // 再描画前に destroy（長期運用での更新停止対策）
+      chartTemp  = destroyIfExists(chartTemp);
+      chartHum   = destroyIfExists(chartHum);
+      chartWater = destroyIfExists(chartWater);
+
+      // 温度
+      chartTemp = new Chart(tempCanvas.getContext("2d"), {
+        type: "line",
+        data: {
+          labels: safeLabels,
+          datasets: [
+            { label: "室内温度 (°C)", data: safe(indoorTemp), tension: 0.2, spanGaps: true },
+            { label: "外気温度 (°C)", data: safe(owmTemp),    tension: 0.2, spanGaps: true }
+          ]
+        },
+        options: {
+          responsive: false,
+          maintainAspectRatio: false,
+          interaction: { mode: "index", intersect: false },
+          scales: {
+            x: { ticks: { maxTicksLimit: 8 } },
+            y: { title: { display: true, text: "Temperature (°C)" } }
+          }
+        }
+      });
+
+      // 湿度
+      chartHum = new Chart(humCanvas.getContext("2d"), {
+        type: "line",
+        data: {
+          labels: safeLabels,
+          datasets: [
+            { label: "室内湿度 (%)", data: safe(indoorHum), tension: 0.2, spanGaps: true },
+            { label: "外気湿度 (%)", data: safe(owmHum),    tension: 0.2, spanGaps: true }
+          ]
+        },
+        options: {
+          responsive: false,
+          maintainAspectRatio: false,
+          interaction: { mode: "index", intersect: false },
+          scales: {
+            x: { ticks: { maxTicksLimit: 8 } },
+            y: { title: { display: true, text: "Humidity (%)" }, min: 0, max: 100 }
+          }
+        }
+      });
+
+      // 水位（警告線を水平線データセットで表現）
+      const waterDatasets = [
+        { label: "水位 (mm)", data: safe(waterLevel), tension: 0.2, spanGaps: true }
+      ];
+      if (warnMm !== null) {
+        waterDatasets.push({
+          label: `警告ライン (${warnMm}mm)`,
+          data: safeLabels.map(() => warnMm),
+          borderDash: [6, 4],
+          pointRadius: 0,
+          tension: 0
+        });
+      }
+      if (critMm !== null) {
+        waterDatasets.push({
+          label: `危険ライン (${critMm}mm)`,
+          data: safeLabels.map(() => critMm),
+          borderDash: [2, 4],
+          pointRadius: 0,
+          tension: 0
+        });
+      }
+
+      chartWater = new Chart(waterCanvas.getContext("2d"), {
+        type: "line",
+        data: { labels: safeLabels, datasets: waterDatasets },
+        options: {
+          responsive: false,
+          maintainAspectRatio: false,
+          interaction: { mode: "index", intersect: false },
+          scales: {
+            x: { ticks: { maxTicksLimit: 8 } },
+            y: { title: { display: true, text: "Water level (mm)" } }
+          }
+        }
+      });
+
+    } catch (e) {
+      console.error("履歴の取得に失敗しました", e);
+    }
+  }
+
+  // DOM構築完了後に実行
+  document.addEventListener("DOMContentLoaded", function () {
+    // 初回描画
+    loadHistoryAndDraw();
+
+    // レンジ変更で即再描画
+    const rangeEl = document.getElementById("rangeSelect");
+    if (rangeEl) {
+      rangeEl.addEventListener("change", () => loadHistoryAndDraw());
+    }
+
+    // 再描画ボタン
+    const btn = document.getElementById("redrawBtn");
+    if (btn) {
+      btn.addEventListener("click", () => loadHistoryAndDraw());
+    }
+  });
 </script>
 </body>
 </html>
