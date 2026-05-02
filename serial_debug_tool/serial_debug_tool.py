@@ -43,6 +43,10 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtGui import QAction
 from PySide6.QtCore import QThread
+from logger_config import setup_logger
+
+# ロガー作成
+logger = setup_logger(__name__)
 
 APP_NAME = "Serial Debug Tool"
 CONFIG_PATH = Path("serial_debug_tool_config.json")
